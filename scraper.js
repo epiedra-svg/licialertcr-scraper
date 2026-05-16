@@ -10,10 +10,22 @@ const { chromium } = require('playwright');
     waitUntil: "networkidle"
   });
 
-  console.log("Esperando que Angular cargue...");
-  await page.waitForTimeout(5000);
+  console.log("Esperando que Angular cargue la tabla...");
+  await page.waitForTimeout(6000); // Espera 6 segundos para que Angular renderice
 
-  console.log("Título de la página:", await page.title());
+  // Selector de la tabla
+  const rowSelector = "table tbody tr";
+
+  console.log("Buscando la primera fila...");
+  const firstRow = await page.$(rowSelector);
+
+  if (!firstRow) {
+    console.log("❌ No se encontró ninguna fila. Angular no cargó la tabla.");
+  } else {
+    const rowText = await firstRow.innerText();
+    console.log("✔ Primera fila encontrada:");
+    console.log(rowText);
+  }
 
   await browser.close();
   console.log("Scraper finalizado.");
