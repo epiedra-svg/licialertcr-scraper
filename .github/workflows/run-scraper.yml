@@ -5,7 +5,6 @@ on:
     - cron: "0 * * * *"
   workflow_dispatch:
 
-
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -13,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Node.js
         uses: actions/setup-node@v3
@@ -20,10 +21,14 @@ jobs:
           node-version: 18
 
       - name: Install Playwright (library)
-        run: npm install playwright
+        run: npm install playwright nodemailer
 
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+        run: npx playwright install --with-deps chromium
 
       - name: Run scraper
+        env:
+          EMAIL_USER: ${{ epiedra@hidroambientecr.com }}
+          EMAIL_PASS: ${{ dmgg xues wmey ilok }}
+          EMAIL_TO: ${{ tramites@hidroambientecr.com }}
         run: node scraper.js
