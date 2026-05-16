@@ -13,7 +13,9 @@ const { execSync } = require('child_process');
     waitUntil: "networkidle"
   });
 
-  await page.waitForTimeout(5000);
+  // Esperar a que Angular cargue los filtros
+  console.log("Esperando que carguen los filtros...");
+  await page.getByRole("button", { name: "Consultar" }).waitFor({ timeout: 30000 });
 
   // Palabras clave
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
@@ -40,7 +42,7 @@ const { execSync } = require('child_process');
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
     // Esperar input
-    await page.waitForSelector("input[ng-model='searchData.description']", { timeout: 20000 });
+    await page.waitForSelector("input[ng-model='searchData.description']", { timeout: 30000 });
 
     // Limpiar campo
     await page.fill("input[ng-model='searchData.description']", "");
