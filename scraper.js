@@ -1,4 +1,7 @@
 const { chromium } = require('playwright');
+const fs = require('fs');
+const nodemailer = require('nodemailer');
+const { execSync } = require('child_process');
 
 (async () => {
   console.log("Iniciando navegador...");
@@ -15,8 +18,14 @@ const { chromium } = require('playwright');
   // Palabras clave
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
-  // Lista global de resultados
-  let resultados = [];
+  // Cargar concursos ya enviados
+  let enviados = [];
+  if (fs.existsSync("enviados.json")) {
+    enviados = JSON.parse(fs.readFileSync("enviados.json", "utf8"));
+  }
+
+  // Lista global de resultados nuevos
+  let nuevos = [];
 
   // Fecha de hoy en formato dd/mm/yyyy
   const hoy = new Date();
@@ -30,13 +39,14 @@ const { chromium } = require('playwright');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    // Limpiar campo de descripción
+    // Esperar input
+    await page.waitForSelector("input[ng-model='searchData.description']", { timeout: 20000 });
+
+    // Limpiar campo
     await page.fill("input[ng-model='searchData.description']", "");
-    await page.waitForTimeout(500);
 
     // Escribir palabra clave
     await page.fill("input[ng-model='searchData.description']", palabra);
-    await page.waitForTimeout(500);
 
     // Clic en Consultar
     try {
@@ -65,25 +75,70 @@ const { chromium } = require('playwright');
 
       // Buscar fecha dentro del texto
       if (textoFila.includes(fechaHoy)) {
-        resultados.push({
-          palabra,
-          texto: textoFila
-        });
+        // Evitar duplicados
+        if (!enviados.includes(textoFila)) {
+          nuevos.push({
+            palabra,
+            texto: textoFila
+          });
+        }
       }
     }
   }
 
   console.log("\n==============================");
-  console.log("RESULTADOS FINALES");
+  console.log("RESULTADOS NUEVOS");
   console.log("==============================");
 
-  if (resultados.length === 0) {
-    console.log("A esta hora no se encontraron concursos");
+  if (nuevos.length === 0) {
+    console.log("A esta hora no se encontraron concursos nuevos");
   } else {
-    resultados.forEach((r, i) => {
+    nuevos.forEach((r, i) => {
       console.log(`\n${i + 1}. [${r.palabra}]`);
       console.log(r.texto);
     });
+  }
+
+  // Enviar correo solo si hay nuevos
+  if (nuevos.length > 0) {
+    console.log("\n📧 Enviando correo...");
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    const cuerpo = nuevos
+      .map((r, i) => `${i + 1}. [${r.palabra}]\n${r.texto}`)
+      .join("\n\n");
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO,
+      subject: "Nuevos concursos encontrados en SICOP",
+      text: cuerpo
+    });
+
+    console.log("✔ Correo enviado");
+  }
+
+  // Actualizar enviados.json
+  if (nuevos.length > 0) {
+    const nuevosTextos = nuevos.map(n => n.texto);
+    const actualizados = [...enviados, ...nuevosTextos];
+    fs.writeFileSync("enviados.json", JSON.stringify(actualizados, null, 2));
+
+    console.log("✔ enviados.json actualizado");
+
+    // Hacer commit automático
+    execSync("git config user.name 'github-actions'");
+    execSync("git config user.email 'github-actions@github.com'");
+    execSync("git add enviados.json");
+    execSync("git commit -m 'Actualizar enviados.json'");
+    execSync("git push");
   }
 
   await browser.close();
