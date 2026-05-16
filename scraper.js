@@ -11,34 +11,35 @@ const { chromium } = require('playwright');
   });
 
   console.log("Esperando que cargue la página inicial...");
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(5000);
 
-  console.log("Buscando botón 'Consultar'...");
-  // Botón verde de Consultar
-  const consultarButton = await page.$("button.btn.btn-success");
-
-  if (!consultarButton) {
-    console.log("❌ No se encontró el botón 'Consultar'.");
+  console.log("Buscando botón 'Consultar' por texto...");
+  try {
+    await page.getByRole("button", { name: "Consultar" }).click();
+    console.log("✔ Click en 'Consultar' realizado.");
+  } catch (e) {
+    console.log("❌ No se pudo hacer clic en 'Consultar'.");
+    console.log(e);
     await browser.close();
     return;
   }
 
-  console.log("Haciendo clic en 'Consultar'...");
-  await consultarButton.click();
-
   console.log("Esperando que carguen los resultados...");
-  // Esperamos a que aparezca al menos una fila en la tabla
   const rowSelector = "table tbody tr";
-  await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
-  const firstRow = await page.$(rowSelector);
+  try {
+    await page.waitForSelector(rowSelector, { timeout: 15000 });
+    const firstRow = await page.$(rowSelector);
 
-  if (!firstRow) {
-    console.log("❌ No se encontró ninguna fila después de consultar.");
-  } else {
-    const rowText = await firstRow.innerText();
-    console.log("✔ Primera fila encontrada:");
-    console.log(rowText);
+    if (!firstRow) {
+      console.log("❌ No se encontró ninguna fila después de consultar.");
+    } else {
+      const rowText = await firstRow.innerText();
+      console.log("✔ Primera fila encontrada:");
+      console.log(rowText);
+    }
+  } catch {
+    console.log("❌ La tabla no apareció a tiempo.");
   }
 
   await browser.close();
