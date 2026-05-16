@@ -10,17 +10,31 @@ const { chromium } = require('playwright');
     waitUntil: "networkidle"
   });
 
-  console.log("Esperando que Angular cargue la tabla...");
-  await page.waitForTimeout(6000); // Espera 6 segundos para que Angular renderice
+  console.log("Esperando que cargue la página inicial...");
+  await page.waitForTimeout(4000);
 
-  // Selector de la tabla
+  console.log("Buscando botón 'Consultar'...");
+  // Botón verde de Consultar
+  const consultarButton = await page.$("button.btn.btn-success");
+
+  if (!consultarButton) {
+    console.log("❌ No se encontró el botón 'Consultar'.");
+    await browser.close();
+    return;
+  }
+
+  console.log("Haciendo clic en 'Consultar'...");
+  await consultarButton.click();
+
+  console.log("Esperando que carguen los resultados...");
+  // Esperamos a que aparezca al menos una fila en la tabla
   const rowSelector = "table tbody tr";
+  await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
-  console.log("Buscando la primera fila...");
   const firstRow = await page.$(rowSelector);
 
   if (!firstRow) {
-    console.log("❌ No se encontró ninguna fila. Angular no cargó la tabla.");
+    console.log("❌ No se encontró ninguna fila después de consultar.");
   } else {
     const rowText = await firstRow.innerText();
     console.log("✔ Primera fila encontrada:");
