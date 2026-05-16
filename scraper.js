@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 (async () => {
   console.log("Iniciando navegador...");
   const browser = await chromium.launch({
-    headless: false, // 👈 MODO HEADED (IMPORTANTE)
+    headless: false, // 👈 MODO HEADED
     args: ['--no-sandbox']
   });
 
@@ -18,7 +18,7 @@ const { execSync } = require('child_process');
   });
 
   console.log("Esperando que carguen los filtros...");
-  await page.getByRole("button", { name: "Consultar" }).waitFor({ timeout: 30000 });
+  await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -40,11 +40,16 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    await page.waitForSelector("input[ng-model='searchData.description']", { timeout: 30000 });
+    // Esperar input correcto (PrimeNG)
+    await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
-    await page.fill("input[ng-model='searchData.description']", "");
-    await page.fill("input[ng-model='searchData.description']", palabra);
+    // Limpiar campo
+    await page.fill("#attr_cartelNm", "");
 
+    // Escribir palabra clave
+    await page.fill("#attr_cartelNm", palabra);
+
+    // Clic en Consultar
     try {
       await page.getByRole("button", { name: "Consultar" }).click();
       console.log("✔ Consultar presionado");
@@ -53,6 +58,7 @@ const { execSync } = require('child_process');
       continue;
     }
 
+    // Esperar tabla
     const rowSelector = "table tbody tr";
     await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
