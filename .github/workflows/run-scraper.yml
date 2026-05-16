@@ -1,0 +1,26 @@
+name: Run SICOP Scraper
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install Playwright (library)
+        run: npm install playwright
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run scraper
+        run: node scraper.js
