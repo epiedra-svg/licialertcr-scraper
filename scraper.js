@@ -5,7 +5,11 @@ const { execSync } = require('child_process');
 
 (async () => {
   console.log("Iniciando navegador...");
-  const browser = await chromium.launch({ args: ['--no-sandbox'] });
+  const browser = await chromium.launch({
+    headless: false, // 👈 MODO HEADED (IMPORTANTE)
+    args: ['--no-sandbox']
+  });
+
   const page = await browser.newPage();
 
   console.log("Abriendo SICOP...");
@@ -13,23 +17,18 @@ const { execSync } = require('child_process');
     waitUntil: "networkidle"
   });
 
-  // Esperar a que Angular cargue los filtros
   console.log("Esperando que carguen los filtros...");
   await page.getByRole("button", { name: "Consultar" }).waitFor({ timeout: 30000 });
 
-  // Palabras clave
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
-  // Cargar concursos ya enviados
   let enviados = [];
   if (fs.existsSync("enviados.json")) {
     enviados = JSON.parse(fs.readFileSync("enviados.json", "utf8"));
   }
 
-  // Lista global de resultados nuevos
   let nuevos = [];
 
-  // Fecha de hoy en formato dd/mm/yyyy
   const hoy = new Date();
   const dia = String(hoy.getDate()).padStart(2, "0");
   const mes = String(hoy.getMonth() + 1).padStart(2, "0");
@@ -41,16 +40,11 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    // Esperar input
     await page.waitForSelector("input[ng-model='searchData.description']", { timeout: 30000 });
 
-    // Limpiar campo
     await page.fill("input[ng-model='searchData.description']", "");
-
-    // Escribir palabra clave
     await page.fill("input[ng-model='searchData.description']", palabra);
 
-    // Clic en Consultar
     try {
       await page.getByRole("button", { name: "Consultar" }).click();
       console.log("✔ Consultar presionado");
@@ -59,7 +53,6 @@ const { execSync } = require('child_process');
       continue;
     }
 
-    // Esperar tabla
     const rowSelector = "table tbody tr";
     await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
@@ -75,9 +68,7 @@ const { execSync } = require('child_process');
     for (const fila of filas) {
       const textoFila = await fila.innerText();
 
-      // Buscar fecha dentro del texto
       if (textoFila.includes(fechaHoy)) {
-        // Evitar duplicados
         if (!enviados.includes(textoFila)) {
           nuevos.push({
             palabra,
@@ -101,7 +92,6 @@ const { execSync } = require('child_process');
     });
   }
 
-  // Enviar correo solo si hay nuevos
   if (nuevos.length > 0) {
     console.log("\n📧 Enviando correo...");
 
@@ -127,7 +117,6 @@ const { execSync } = require('child_process');
     console.log("✔ Correo enviado");
   }
 
-  // Actualizar enviados.json
   if (nuevos.length > 0) {
     const nuevosTextos = nuevos.map(n => n.texto);
     const actualizados = [...enviados, ...nuevosTextos];
@@ -135,7 +124,6 @@ const { execSync } = require('child_process');
 
     console.log("✔ enviados.json actualizado");
 
-    // Hacer commit automático
     execSync("git config user.name 'github-actions'");
     execSync("git config user.email 'github-actions@github.com'");
     execSync("git add enviados.json");
