@@ -16,7 +16,10 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Playwright
+      - name: Install Playwright (library)
+        run: npm install playwright
+
+      - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
       - name: Test Chromium launch
