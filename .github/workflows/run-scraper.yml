@@ -2,11 +2,11 @@ name: Run SICOP Scraper
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 * * * *"   # Corre cada hora
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # Necesario para hacer git push
 
 jobs:
   scrape:
