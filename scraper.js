@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 (async () => {
   console.log("Iniciando navegador...");
   const browser = await chromium.launch({
-    headless: false, // 👈 MODO HEADED
+    headless: false, // MODO HEADED
     args: ['--no-sandbox']
   });
 
@@ -18,6 +18,16 @@ const { execSync } = require('child_process');
   });
 
   console.log("Esperando que carguen los filtros...");
+
+  // 🔥 FIX: Abrir el panel del acordeón donde está el input
+  try {
+    await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click();
+    console.log("✔ Panel de filtros expandido");
+  } catch {
+    console.log("⚠ No se pudo expandir el panel (puede que ya esté abierto)");
+  }
+
+  // Esperar el input visible
   await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
@@ -40,7 +50,12 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    // Esperar input correcto (PrimeNG)
+    // Asegurar que el panel esté abierto ANTES de cada búsqueda
+    try {
+      await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click({ trial: true });
+    } catch {}
+
+    // Esperar input visible
     await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
     // Limpiar campo
