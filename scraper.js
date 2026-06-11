@@ -19,49 +19,14 @@ const { execSync } = require('child_process');
     timeout: 120000
   });
 
-  // ================================
-  // 🔥 FIX: ESPERAR A QUE EXISTA EL ACORDEÓN
-  // ================================
-  console.log("Esperando que aparezca el acordeón...");
-  await page.waitForSelector("p-accordion-panel:nth-of-type(1)", {
-    timeout: 60000
-  });
-
-  console.log("Acordeón detectado, intentando abrirlo...");
-
-  const accordionButton = page.locator(
-    "p-accordion-panel:nth-of-type(1) span[role='button']"
-  );
-
-  let panelAbierto = false;
-
-  for (let i = 0; i < 5; i++) {
-    try {
-      await accordionButton.click();
-      console.log(`✔ Click al acordeón (intento ${i + 1})`);
-
-      await page.waitForSelector("#attr_cartelNm", {
-        timeout: 2000,
-        state: "visible"
-      });
-
-      panelAbierto = true;
-      console.log("✔ Panel abierto correctamente");
-      break;
-    } catch {
-      console.log(`⚠ Panel aún cerrado (intento ${i + 1})`);
-    }
-  }
-
-  if (!panelAbierto) {
-    console.log("❌ No se pudo abrir el panel después de varios intentos");
-    await browser.close();
-    process.exit(1);
-  }
+  console.log("Esperando que el input exista en el DOM...");
+  await page.waitForSelector("#attr_cartelNm", { timeout: 60000 });
 
   // ================================
-  // PALABRAS A BUSCAR
+  // 🔥 MÉTODO INFALIBLE:
+  // IGNORAR ACORDEÓN Y FORZAR TODO
   // ================================
+
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
   let enviados = [];
@@ -82,17 +47,15 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
+    // Limpiar campo (forzado)
+    await page.fill("#attr_cartelNm", "", { force: true });
+
+    // Escribir palabra (forzado)
+    await page.fill("#attr_cartelNm", palabra, { force: true });
+
+    // Click en Consultar (forzado)
     try {
-      await accordionButton.click({ trial: true });
-    } catch {}
-
-    await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
-
-    await page.fill("#attr_cartelNm", "");
-    await page.fill("#attr_cartelNm", palabra);
-
-    try {
-      await page.getByRole("button", { name: "Consultar" }).click();
+      await page.getByRole("button", { name: "Consultar" }).click({ force: true });
       console.log("✔ Consultar presionado");
     } catch {
       console.log("❌ No se pudo presionar Consultar");
