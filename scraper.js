@@ -6,7 +6,7 @@ const { execSync } = require('child_process');
 (async () => {
   console.log("Iniciando navegador...");
   const browser = await chromium.launch({
-    headless: false, // MODO HEADED
+    headless: false,
     args: ['--no-sandbox']
   });
 
@@ -19,17 +19,48 @@ const { execSync } = require('child_process');
 
   console.log("Esperando que carguen los filtros...");
 
-  // 🔥 FIX: Abrir el panel del acordeón donde está el input
-  try {
-    await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click();
-    console.log("✔ Panel de filtros expandido");
-  } catch {
-    console.log("⚠ No se pudo expandir el panel (puede que ya esté abierto)");
+  // ================================
+  // 🔥 FIX DEFINITIVO DEL ACORDEÓN
+  // ================================
+  const accordionButton = page.locator(
+    "p-accordion-panel:nth-of-type(1) span[role='button']"
+  );
+
+  console.log("Intentando abrir el panel de filtros...");
+
+  let panelAbierto = false;
+
+  for (let i = 0; i < 5; i++) {
+    try {
+      await accordionButton.click();
+      console.log(`✔ Click al acordeón (intento ${i + 1})`);
+
+      // Esperar a que el input deje de estar hidden
+      await page.waitForSelector("#attr_cartelNm", {
+        timeout: 2000,
+        state: "visible"
+      });
+
+      panelAbierto = true;
+      console.log("✔ Panel abierto correctamente");
+      break;
+    } catch {
+      console.log(`⚠ Panel aún cerrado (intento ${i + 1})`);
+    }
   }
 
-  // Esperar el input visible
+  if (!panelAbierto) {
+    console.log("❌ No se pudo abrir el panel después de varios intentos");
+    await browser.close();
+    process.exit(1);
+  }
+
+  // Ahora sí esperar el input visible
   await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
+  // ================================
+  // PALABRAS A BUSCAR
+  // ================================
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
   let enviados = [];
@@ -52,19 +83,14 @@ const { execSync } = require('child_process');
 
     // Asegurar que el panel esté abierto ANTES de cada búsqueda
     try {
-      await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click({ trial: true });
+      await accordionButton.click({ trial: true });
     } catch {}
 
-    // Esperar input visible
     await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
-    // Limpiar campo
     await page.fill("#attr_cartelNm", "");
-
-    // Escribir palabra clave
     await page.fill("#attr_cartelNm", palabra);
 
-    // Clic en Consultar
     try {
       await page.getByRole("button", { name: "Consultar" }).click();
       console.log("✔ Consultar presionado");
@@ -73,7 +99,6 @@ const { execSync } = require('child_process');
       continue;
     }
 
-    // Esperar tabla
     const rowSelector = "table tbody tr";
     await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
