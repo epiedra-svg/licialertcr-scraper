@@ -1,184 +1,39 @@
-const { chromium } = require('playwright');
-const fs = require('fs');
-const nodemailer = require('nodemailer');
-const { execSync } = require('child_process');
+console.log("Esperando que aparezca el acordeón...");
 
-(async () => {
-  console.log("Iniciando navegador...");
-  const browser = await chromium.launch({
-    headless: false,
-    args: ['--no-sandbox']
-  });
+// Esperar a que el acordeón exista en el DOM
+await page.waitForSelector("p-accordion-panel:nth-of-type(1)", {
+  timeout: 60000
+});
 
-  const page = await browser.newPage();
+console.log("Acordeón detectado, intentando abrirlo...");
 
-  console.log("Abriendo SICOP...");
+// Botón real del acordeón
+const accordionButton = page.locator(
+  "p-accordion-panel:nth-of-type(1) span[role='button']"
+);
 
-// ================================
-// 🔥 FIX DE NETWORKIDLE
-// ================================
-  await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
-    waitUntil: "domcontentloaded",
-    timeout: 120000 // 2 minutos
-  });
+let panelAbierto = false;
 
-  console.log("Esperando que carguen los filtros...");
+for (let i = 0; i < 5; i++) {
+  try {
+    await accordionButton.click();
+    console.log(`✔ Click al acordeón (intento ${i + 1})`);
 
-// ================================
-// 🔥 FIX DEFINITIVO DEL ACORDEÓN
-// ================================
-  const accordionButton = page.locator(
-    "p-accordion-panel:nth-of-type(1) span[role='button']"
-  );
-
-  console.log("Intentando abrir el panel de filtros...");
-
-  let panelAbierto = false;
-
-  for (let i = 0; i < 5; i++) {
-    try {
-      await accordionButton.click();
-      console.log(`✔ Click al acordeón (intento ${i + 1})`);
-
-      await page.waitForSelector("#attr_cartelNm", {
-        timeout: 2000,
-        state: "visible"
-      });
-
-      panelAbierto = true;
-      console.log("✔ Panel abierto correctamente");
-      break;
-    } catch {
-      console.log(`⚠ Panel aún cerrado (intento ${i + 1})`);
-    }
-  }
-
-  if (!panelAbierto) {
-    console.log("❌ No se pudo abrir el panel después de varios intentos");
-    await browser.close();
-    process.exit(1);
-  }
-
-  await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
-
-// ================================
-// PALABRAS A BUSCAR
-// ================================
-  const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
-
-  let enviados = [];
-  if (fs.existsSync("enviados.json")) {
-    enviados = JSON.parse(fs.readFileSync("enviados.json", "utf8"));
-  }
-
-  let nuevos = [];
-
-  const hoy = new Date();
-  const dia = String(hoy.getDate()).padStart(2, "0");
-  const mes = String(hoy.getMonth() + 1).padStart(2, "0");
-  const anio = hoy.getFullYear();
-  const fechaHoy = `${dia}/${mes}/${anio}`;
-
-  console.log("Fecha de hoy:", fechaHoy);
-
-  for (const palabra of keywords) {
-    console.log(`\n🔎 Buscando concursos con: ${palabra}`);
-
-    try {
-      await accordionButton.click({ trial: true });
-    } catch {}
-
-    await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
-
-    await page.fill("#attr_cartelNm", "");
-    await page.fill("#attr_cartelNm", palabra);
-
-    try {
-      await page.getByRole("button", { name: "Consultar" }).click();
-      console.log("✔ Consultar presionado");
-    } catch {
-      console.log("❌ No se pudo presionar Consultar");
-      continue;
-    }
-
-    const rowSelector = "table tbody tr";
-    await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
-
-    const filas = await page.$$(rowSelector);
-
-    if (filas.length === 0) {
-      console.log("❌ No hay filas para esta palabra");
-      continue;
-    }
-
-    console.log(`Se encontraron ${filas.length} filas, filtrando por fecha de hoy...`);
-
-    for (const fila of filas) {
-      const textoFila = await fila.innerText();
-
-      if (textoFila.includes(fechaHoy)) {
-        if (!enviados.includes(textoFila)) {
-          nuevos.push({
-            palabra,
-            texto: textoFila
-          });
-        }
-      }
-    }
-  }
-
-  console.log("\n==============================");
-  console.log("RESULTADOS NUEVOS");
-  console.log("==============================");
-
-  if (nuevos.length === 0) {
-    console.log("A esta hora no se encontraron concursos nuevos");
-  } else {
-    nuevos.forEach((r, i) => {
-      console.log(`\n${i + 1}. [${r.palabra}]`);
-      console.log(r.texto);
-    });
-  }
-
-  if (nuevos.length > 0) {
-    console.log("\n📧 Enviando correo...");
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-      }
+    await page.waitForSelector("#attr_cartelNm", {
+      timeout: 2000,
+      state: "visible"
     });
 
-    const cuerpo = nuevos
-      .map((r, i) => `${i + 1}. [${r.palabra}]\n${r.texto}`)
-      .join("\n\n");
-
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO,
-      subject: "Nuevos concursos encontrados en SICOP",
-      text: cuerpo
-    });
-
-    console.log("✔ Correo enviado");
+    panelAbierto = true;
+    console.log("✔ Panel abierto correctamente");
+    break;
+  } catch {
+    console.log(`⚠ Panel aún cerrado (intento ${i + 1})`);
   }
+}
 
-  if (nuevos.length > 0) {
-    const nuevosTextos = nuevos.map(n => n.texto);
-    const actualizados = [...enviados, ...nuevosTextos];
-    fs.writeFileSync("enviados.json", JSON.stringify(actualizados, null, 2));
-
-    console.log("✔ enviados.json actualizado");
-
-    execSync("git config user.name 'github-actions'");
-    execSync("git config user.email 'github-actions@github.com'");
-    execSync("git add enviados.json");
-    execSync("git commit -m 'Actualizar enviados.json'");
-    execSync("git push");
-  }
-
+if (!panelAbierto) {
+  console.log("❌ No se pudo abrir el panel después de varios intentos");
   await browser.close();
-  console.log("\nScraper finalizado.");
-})();
+  process.exit(1);
+}
