@@ -13,15 +13,20 @@ const { execSync } = require('child_process');
   const page = await browser.newPage();
 
   console.log("Abriendo SICOP...");
+
+// ================================
+// 🔥 FIX DE NETWORKIDLE
+// ================================
   await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
-    waitUntil: "networkidle"
+    waitUntil: "domcontentloaded",
+    timeout: 120000 // 2 minutos
   });
 
   console.log("Esperando que carguen los filtros...");
 
-  // ================================
-  // 🔥 FIX DEFINITIVO DEL ACORDEÓN
-  // ================================
+// ================================
+// 🔥 FIX DEFINITIVO DEL ACORDEÓN
+// ================================
   const accordionButton = page.locator(
     "p-accordion-panel:nth-of-type(1) span[role='button']"
   );
@@ -35,7 +40,6 @@ const { execSync } = require('child_process');
       await accordionButton.click();
       console.log(`✔ Click al acordeón (intento ${i + 1})`);
 
-      // Esperar a que el input deje de estar hidden
       await page.waitForSelector("#attr_cartelNm", {
         timeout: 2000,
         state: "visible"
@@ -55,12 +59,11 @@ const { execSync } = require('child_process');
     process.exit(1);
   }
 
-  // Ahora sí esperar el input visible
   await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
-  // ================================
-  // PALABRAS A BUSCAR
-  // ================================
+// ================================
+// PALABRAS A BUSCAR
+// ================================
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
   let enviados = [];
@@ -81,7 +84,6 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    // Asegurar que el panel esté abierto ANTES de cada búsqueda
     try {
       await accordionButton.click({ trial: true });
     } catch {}
