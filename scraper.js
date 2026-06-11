@@ -4,10 +4,9 @@ const nodemailer = require('nodemailer');
 const { execSync } = require('child_process');
 
 (async () => {
-
   console.log("Iniciando navegador...");
   const browser = await chromium.launch({
-    headless: false,
+    headless: false, // MODO HEADED
     args: ['--no-sandbox']
   });
 
@@ -15,17 +14,21 @@ const { execSync } = require('child_process');
 
   console.log("Abriendo SICOP...");
   await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
-    waitUntil: "domcontentloaded",
-    timeout: 120000
+    waitUntil: "networkidle"
   });
 
-  console.log("Esperando que el input exista en el DOM...");
-  await page.waitForSelector("#attr_cartelNm", { timeout: 60000 });
+  console.log("Esperando que carguen los filtros...");
 
-  // ================================
-  // 🔥 MÉTODO INFALIBLE:
-  // IGNORAR ACORDEÓN Y FORZAR TODO
-  // ================================
+  // 🔥 FIX: Abrir el panel del acordeón donde está el input
+  try {
+    await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click();
+    console.log("✔ Panel de filtros expandido");
+  } catch {
+    console.log("⚠ No se pudo expandir el panel (puede que ya esté abierto)");
+  }
+
+  // Esperar el input visible
+  await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
 
   const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -47,21 +50,30 @@ const { execSync } = require('child_process');
   for (const palabra of keywords) {
     console.log(`\n🔎 Buscando concursos con: ${palabra}`);
 
-    // Limpiar campo (forzado)
-    await page.fill("#attr_cartelNm", "", { force: true });
-
-    // Escribir palabra (forzado)
-    await page.fill("#attr_cartelNm", palabra, { force: true });
-
-    // Click en Consultar (forzado)
+    // Asegurar que el panel esté abierto ANTES de cada búsqueda
     try {
-      await page.getByRole("button", { name: "Consultar" }).click({ force: true });
+      await page.locator("p-accordion-panel:nth-of-type(1) .p-accordion-header").click({ trial: true });
+    } catch {}
+
+    // Esperar input visible
+    await page.waitForSelector("#attr_cartelNm", { timeout: 30000 });
+
+    // Limpiar campo
+    await page.fill("#attr_cartelNm", "");
+
+    // Escribir palabra clave
+    await page.fill("#attr_cartelNm", palabra);
+
+    // Clic en Consultar
+    try {
+      await page.getByRole("button", { name: "Consultar" }).click();
       console.log("✔ Consultar presionado");
     } catch {
       console.log("❌ No se pudo presionar Consultar");
       continue;
     }
 
+    // Esperar tabla
     const rowSelector = "table tbody tr";
     await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
@@ -142,5 +154,4 @@ const { execSync } = require('child_process');
 
   await browser.close();
   console.log("\nScraper finalizado.");
-
 })();
