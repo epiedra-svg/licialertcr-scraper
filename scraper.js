@@ -13,15 +13,24 @@ const { execSync } = require('child_process');
   const page = await browser.newPage();
 
   try {
+    // 1. Entrar a SICOP
     console.log("Abriendo SICOP...");
     await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
       waitUntil: "domcontentloaded",
       timeout: 120000
     });
 
-    console.log("Esperando campo de búsqueda #elasticSearch...");
-    const inputSearch = page.locator("#elasticSearch");
-    await inputSearch.waitFor({ state: "visible", timeout: 60000 });
+    // 2. Hacer clic en "Búsqueda avanzada"
+    console.log("Desplegando sección 'Búsqueda avanzada'...");
+    // Se usa selector por texto para evitar fallos si el ID dinámico pn_id_X cambia entre sesiones
+    const busquedaAvanzadaHeader = page.locator("p-accordion-header").filter({ hasText: "Búsqueda avanzada" })
+                                       .or(page.locator("#pn_id_6_accordionheader_1"));
+    
+    await busquedaAvanzadaHeader.first().click({ force: true });
+
+    // 3. Esperar a que el input #attr_cartelNm sea visible dentro del acordeón
+    const inputCartel = page.locator("#attr_cartelNm");
+    await inputCartel.waitFor({ state: "visible", timeout: 30000 });
 
     const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -32,53 +41,54 @@ const { execSync } = require('child_process');
 
     let nuevos = [];
 
-    const hoy = new Date();
-    const dia = String(hoy.getDate()).padStart(2, "0");
-    const mes = String(hoy.getMonth() + 1).padStart(2, "0");
-    const anio = hoy.getFullYear();
+    // Fecha actual en Costa Rica (DD/MM/YYYY)
+    const hoyCR = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Costa_Rica" }));
+    const dia = String(hoyCR.getDate()).padStart(2, "0");
+    const mes = String(hoyCR.getMonth() + 1).padStart(2, "0");
+    const anio = hoyCR.getFullYear();
     const fechaHoy = `${dia}/${mes}/${anio}`;
 
-    console.log("Fecha de hoy:", fechaHoy);
+    console.log("Fecha de búsqueda (Costa Rica):", fechaHoy);
 
     for (const palabra of keywords) {
-      console.log(`\n🔎 Buscando concursos con la palabra: "${palabra}"`);
+      console.log(`\n🔎 Buscando en Búsqueda Avanzada con: "${palabra}"`);
 
-      // 1. Limpiar e interactuar con Angular correctamente
-      await inputSearch.click();
+      // Escribir palabra en #attr_cartelNm activando eventos de Angular
+      await inputCartel.click();
       await page.keyboard.press("Control+A");
       await page.keyboard.press("Backspace");
-      
-      // Escribir simulando teclado real para activar los eventos de Angular
-      await inputSearch.pressSequentially(palabra, { delay: 100 });
+      await inputCartel.pressSequentially(palabra, { delay: 100 });
+      await inputCartel.dispatchEvent('input');
 
-      // 2. Enviar la búsqueda presionando Enter
-      await inputSearch.press("Enter");
-      console.log("✔ Búsqueda enviada (Enter)");
+      // 4. Clic en el botón "Consultar"
+      const botonConsultar = page.getByRole("button", { name: "Consultar" })
+                                  .or(page.locator("button:has-text('Consultar')"))
+                                  .or(page.locator("span.p-button-label:has-text('Consultar')"));
 
-      // 3. Pausa para permitir la recarga de datos via API/Angular
+      await botonConsultar.first().click({ force: true });
+      console.log("✔ Botón 'Consultar' presionado");
+
+      // Esperar actualización de la tabla de resultados
       await page.waitForTimeout(3000);
 
       const rowSelector = "table tbody tr";
       await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
       const filas = await page.$$(rowSelector);
+      console.log(`📊 Filas obtenidas para "${palabra}": ${filas.length}`);
 
       if (filas.length === 0) {
-        console.log("❌ No se encontraron filas");
+        console.log("❌ Sin resultados devueltos por la consulta");
         continue;
       }
 
-      let encontradosConPalabra = 0;
+      let agregadosHoy = 0;
 
       for (const fila of filas) {
         const textoFila = (await fila.innerText()).trim();
 
-        // VALIDACIÓN RIGUROSA: Debe ser de hoy Y contener explícitamente la palabra buscada
-        const esDeHoy = textoFila.includes(fechaHoy);
-        const contienePalabra = textoFila.toLowerCase().includes(palabra.toLowerCase());
-
-        if (esDeHoy && contienePalabra) {
-          encontradosConPalabra++;
+        // Filtrar por la fecha de hoy
+        if (textoFila.includes(fechaHoy)) {
           const yaEnEnviados = enviados.includes(textoFila);
           const yaEnNuevos = nuevos.some(n => n.texto === textoFila);
 
@@ -87,26 +97,28 @@ const { execSync } = require('child_process');
               palabra,
               texto: textoFila
             });
+            agregadosHoy++;
           }
         }
       }
 
-      console.log(`Coincidencias reales para "${palabra}": ${encontradosConPalabra}`);
+      console.log(`✅ Concursos de hoy agregados para "${palabra}": ${agregadosHoy}`);
     }
 
     console.log("\n==============================");
-    console.log(`RESULTADOS NUEVOS FILTRADOS: ${nuevos.length}`);
+    console.log(`TOTAL DE RESULTADOS NUEVOS: ${nuevos.length}`);
     console.log("==============================");
 
     if (nuevos.length === 0) {
-      console.log("No se encontraron concursos nuevos que contengan las palabras clave.");
+      console.log("No hay concursos nuevos publicados hoy para las palabras especificadas.");
     } else {
       nuevos.forEach((r, i) => {
-        console.log(`\n${i + 1}. [${r.palabra}]`);
+        console.log(`\n${i + 1}. [Palabra: ${r.palabra}]`);
         console.log(r.texto);
       });
     }
 
+    // Envío de correos y persistencia si hay novedades
     if (nuevos.length > 0) {
       console.log("\n📧 Enviando correo...");
 
@@ -125,7 +137,7 @@ const { execSync } = require('child_process');
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: process.env.EMAIL_TO,
-        subject: `Nuevos concursos filtrados en SICOP (${fechaHoy})`,
+        subject: `Nuevos concursos en SICOP (${fechaHoy})`,
         text: cuerpo
       });
 
