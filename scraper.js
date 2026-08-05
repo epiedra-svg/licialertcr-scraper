@@ -19,8 +19,9 @@ const { execSync } = require('child_process');
       timeout: 120000
     });
 
-    console.log("Esperando que el input #elasticSearch esté disponible...");
-    await page.waitForSelector("#elasticSearch", { timeout: 60000 });
+    console.log("Esperando campo de búsqueda #elasticSearch...");
+    const inputSearch = page.locator("#elasticSearch");
+    await inputSearch.waitFor({ state: "visible", timeout: 60000 });
 
     const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -40,43 +41,44 @@ const { execSync } = require('child_process');
     console.log("Fecha de hoy:", fechaHoy);
 
     for (const palabra of keywords) {
-      console.log(`\n🔎 Buscando concursos con: ${palabra}`);
+      console.log(`\n🔎 Buscando concursos con la palabra: "${palabra}"`);
 
-      // 1. Limpiar y escribir en el nuevo campo #elasticSearch
-      await page.locator("#elasticSearch").fill("");
-      await page.locator("#elasticSearch").fill(palabra);
+      // 1. Limpiar e interactuar con Angular correctamente
+      await inputSearch.click();
+      await page.keyboard.press("Control+A");
+      await page.keyboard.press("Backspace");
+      
+      // Escribir simulando teclado real para activar los eventos de Angular
+      await inputSearch.pressSequentially(palabra, { delay: 100 });
 
-      // 2. Hacer clic en el nuevo botón de búsqueda
-      // Nota: Incluye fallback (or) por si PrimeNG altera dinámicamente el prefijo "pn_id_12_" al recargar
-      const selectorEspecifico = "#pn_id_12_accordioncontent_0 > div > div > form > div > div.col-lg-2.col-md-3.d-flex.align-items-center > p-button > button > span.p-button-label.ng-star-inserted";
-      const botonBusqueda = page.locator(selectorEspecifico).or(page.locator("form p-button button"));
+      // 2. Enviar la búsqueda presionando Enter
+      await inputSearch.press("Enter");
+      console.log("✔ Búsqueda enviada (Enter)");
 
-      try {
-        await botonBusqueda.first().click({ force: true });
-        console.log("✔ Botón de búsqueda presionado");
-      } catch (err) {
-        console.log("❌ No se pudo presionar el botón de búsqueda:", err.message);
-        continue;
-      }
+      // 3. Pausa para permitir la recarga de datos via API/Angular
+      await page.waitForTimeout(3000);
 
-      // 3. Esperar que la tabla procese los resultados
       const rowSelector = "table tbody tr";
-      await page.waitForTimeout(2000); // Pausa breve para renderizado de Angular
       await page.waitForSelector(rowSelector, { timeout: 15000 }).catch(() => {});
 
       const filas = await page.$$(rowSelector);
 
       if (filas.length === 0) {
-        console.log("❌ No hay filas para esta palabra");
+        console.log("❌ No se encontraron filas");
         continue;
       }
 
-      console.log(`Se encontraron ${filas.length} filas, filtrando por fecha de hoy...`);
+      let encontradosConPalabra = 0;
 
       for (const fila of filas) {
         const textoFila = (await fila.innerText()).trim();
 
-        if (textoFila.includes(fechaHoy)) {
+        // VALIDACIÓN RIGUROSA: Debe ser de hoy Y contener explícitamente la palabra buscada
+        const esDeHoy = textoFila.includes(fechaHoy);
+        const contienePalabra = textoFila.toLowerCase().includes(palabra.toLowerCase());
+
+        if (esDeHoy && contienePalabra) {
+          encontradosConPalabra++;
           const yaEnEnviados = enviados.includes(textoFila);
           const yaEnNuevos = nuevos.some(n => n.texto === textoFila);
 
@@ -88,14 +90,16 @@ const { execSync } = require('child_process');
           }
         }
       }
+
+      console.log(`Coincidencias reales para "${palabra}": ${encontradosConPalabra}`);
     }
 
     console.log("\n==============================");
-    console.log("RESULTADOS NUEVOS");
+    console.log(`RESULTADOS NUEVOS FILTRADOS: ${nuevos.length}`);
     console.log("==============================");
 
     if (nuevos.length === 0) {
-      console.log("A esta hora no se encontraron concursos nuevos");
+      console.log("No se encontraron concursos nuevos que contengan las palabras clave.");
     } else {
       nuevos.forEach((r, i) => {
         console.log(`\n${i + 1}. [${r.palabra}]`);
@@ -115,20 +119,18 @@ const { execSync } = require('child_process');
       });
 
       const cuerpo = nuevos
-        .map((r, i) => `${i + 1}. [${r.palabra}]\n${r.texto}`)
+        .map((r, i) => `${i + 1}. [Coincidencia: ${r.palabra}]\n${r.texto}`)
         .join("\n\n-------------------------------\n\n");
 
       await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: process.env.EMAIL_TO,
-        subject: `Nuevos concursos encontrados en SICOP (${fechaHoy})`,
+        subject: `Nuevos concursos filtrados en SICOP (${fechaHoy})`,
         text: cuerpo
       });
 
       console.log("✔ Correo enviado");
-    }
 
-    if (nuevos.length > 0) {
       const nuevosTextos = nuevos.map(n => n.texto);
       const actualizados = [...enviados, ...nuevosTextos];
       fs.writeFileSync("enviados.json", JSON.stringify(actualizados, null, 2));
@@ -148,7 +150,7 @@ const { execSync } = require('child_process');
     }
 
   } catch (error) {
-    console.error("❌ Error durante el proceso de scraping:", error);
+    console.error("❌ Error en la ejecución:", error);
   } finally {
     await browser.close();
     console.log("\nScraper finalizado.");
