@@ -10,7 +10,6 @@ const { execSync } = require('child_process');
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
-  // 1. Configurar User-Agent real para evitar bloqueo de bots en GitHub Actions
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 720 }
@@ -19,48 +18,26 @@ const { execSync } = require('child_process');
   const page = await context.newPage();
 
   try {
-    // 2. Entrar a SICOP
+    // 1. Entrar a la app pública de concursos en SICOP
     console.log("Abriendo SICOP...");
     await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
       waitUntil: "domcontentloaded",
       timeout: 120000
     });
 
-    // Esperar 5 segundos adicionales a que los scripts de Angular inicien
-    await page.waitForTimeout(5000);
+    // Espera inicial para inicialización de Angular
+    await page.waitForTimeout(4000);
 
+    // 2. Clic en "Búsqueda avanzada"
     console.log("Desplegando sección 'Búsqueda avanzada'...");
-
-    // 3. Buscar el elemento tanto en la página principal como dentro de algún iframe
-    let busquedaAvanzadaHeader = null;
-
-    // Probar en la página principal primero
-    const mainLocator = page.getByText(/búsqueda avanzada/i);
-    if (await mainLocator.count() > 0) {
-      busquedaAvanzadaHeader = mainLocator.first();
-    } else {
-      // Buscar dentro de los frames/iframes presentes en SICOP
-      for (const frame of page.frames()) {
-        const frameLocator = frame.getByText(/búsqueda avanzada/i);
-        if (await frameLocator.count() > 0) {
-          console.log(`✔ Sección encontrada dentro de un iframe (${frame.name() || 'sin nombre'})`);
-          busquedaAvanzadaHeader = frameLocator.first();
-          break;
-        }
-      }
-    }
-
-    if (!busquedaAvanzadaHeader) {
-      throw new Error("No se encontró el elemento 'Búsqueda avanzada' ni en la página principal ni dentro de los iframes.");
-    }
-
+    const busquedaAvanzadaHeader = page.getByText(/búsqueda avanzada/i).first();
     await busquedaAvanzadaHeader.waitFor({ state: "visible", timeout: 30000 });
     await busquedaAvanzadaHeader.click({ force: true });
 
-    // 4. Esperar al campo de texto dentro de la página o frame activo
+    // 3. Esperar e interactuar con el campo de texto #attr_cartelNm
     console.log("Esperando campo de texto #attr_cartelNm...");
-    const inputCartel = page.locator("#attr_cartelNm").or(page.frameLocator('iframe').locator("#attr_cartelNm"));
-    await inputCartel.first().waitFor({ state: "visible", timeout: 30000 });
+    const inputCartel = page.locator("#attr_cartelNm");
+    await inputCartel.waitFor({ state: "visible", timeout: 30000 });
 
     const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -83,11 +60,11 @@ const { execSync } = require('child_process');
     for (const palabra of keywords) {
       console.log(`\n🔎 Buscando en Búsqueda Avanzada con: "${palabra}"`);
 
-      await inputCartel.first().click();
+      await inputCartel.click();
       await page.keyboard.press("Control+A");
       await page.keyboard.press("Backspace");
-      await inputCartel.first().pressSequentially(palabra, { delay: 100 });
-      await inputCartel.first().dispatchEvent('input');
+      await inputCartel.pressSequentially(palabra, { delay: 100 });
+      await inputCartel.dispatchEvent('input');
 
       // Botón "Consultar"
       const botonConsultar = page.getByRole("button", { name: /consultar/i })
@@ -186,7 +163,6 @@ const { execSync } = require('child_process');
 
   } catch (error) {
     console.error("❌ Error en la ejecución:", error);
-    // Guarda una captura de pantalla en la raíz para diagnosticar bloqueos visuales
     await page.screenshot({ path: "error.png", fullPage: true }).catch(() => {});
     console.log("📸 Captura de pantalla 'error.png' guardada.");
   } finally {
