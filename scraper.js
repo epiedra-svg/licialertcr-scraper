@@ -10,29 +10,57 @@ const { execSync } = require('child_process');
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
-  const page = await browser.newPage();
+  // 1. Configurar User-Agent real para evitar bloqueo de bots en GitHub Actions
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    viewport: { width: 1280, height: 720 }
+  });
+
+  const page = await context.newPage();
 
   try {
-    // 1. Entrar a SICOP
+    // 2. Entrar a SICOP
     console.log("Abriendo SICOP...");
     await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
-      waitUntil: "networkidle", // Espera a que Angular termine las peticiones iniciales
+      waitUntil: "domcontentloaded",
       timeout: 120000
     });
 
-    // 2. Hacer clic en "Búsqueda avanzada"
+    // Esperar 5 segundos adicionales a que los scripts de Angular inicien
+    await page.waitForTimeout(5000);
+
     console.log("Desplegando sección 'Búsqueda avanzada'...");
-    
-    // Selector semántico universal para PrimeNG sin IDs dinámicos
-    const busquedaAvanzadaHeader = page.getByText("Búsqueda avanzada", { exact: false });
 
-    // Esperar explícitamente a que Angular renderice el texto en el DOM
-    await busquedaAvanzadaHeader.first().waitFor({ state: "visible", timeout: 30000 });
-    await busquedaAvanzadaHeader.first().click();
+    // 3. Buscar el elemento tanto en la página principal como dentro de algún iframe
+    let busquedaAvanzadaHeader = null;
 
-    // 3. Esperar a que el input #attr_cartelNm sea visible dentro del acordeón
-    const inputCartel = page.locator("#attr_cartelNm");
-    await inputCartel.waitFor({ state: "visible", timeout: 30000 });
+    // Probar en la página principal primero
+    const mainLocator = page.getByText(/búsqueda avanzada/i);
+    if (await mainLocator.count() > 0) {
+      busquedaAvanzadaHeader = mainLocator.first();
+    } else {
+      // Buscar dentro de los frames/iframes presentes en SICOP
+      for (const frame of page.frames()) {
+        const frameLocator = frame.getByText(/búsqueda avanzada/i);
+        if (await frameLocator.count() > 0) {
+          console.log(`✔ Sección encontrada dentro de un iframe (${frame.name() || 'sin nombre'})`);
+          busquedaAvanzadaHeader = frameLocator.first();
+          break;
+        }
+      }
+    }
+
+    if (!busquedaAvanzadaHeader) {
+      throw new Error("No se encontró el elemento 'Búsqueda avanzada' ni en la página principal ni dentro de los iframes.");
+    }
+
+    await busquedaAvanzadaHeader.waitFor({ state: "visible", timeout: 30000 });
+    await busquedaAvanzadaHeader.click({ force: true });
+
+    // 4. Esperar al campo de texto dentro de la página o frame activo
+    console.log("Esperando campo de texto #attr_cartelNm...");
+    const inputCartel = page.locator("#attr_cartelNm").or(page.frameLocator('iframe').locator("#attr_cartelNm"));
+    await inputCartel.first().waitFor({ state: "visible", timeout: 30000 });
 
     const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
@@ -55,22 +83,20 @@ const { execSync } = require('child_process');
     for (const palabra of keywords) {
       console.log(`\n🔎 Buscando en Búsqueda Avanzada con: "${palabra}"`);
 
-      // Escribir palabra en #attr_cartelNm activando eventos de Angular
-      await inputCartel.click();
+      await inputCartel.first().click();
       await page.keyboard.press("Control+A");
       await page.keyboard.press("Backspace");
-      await inputCartel.pressSequentially(palabra, { delay: 100 });
-      await inputCartel.dispatchEvent('input');
+      await inputCartel.first().pressSequentially(palabra, { delay: 100 });
+      await inputCartel.first().dispatchEvent('input');
 
-      // 4. Clic en el botón "Consultar"
-      const botonConsultar = page.getByRole("button", { name: "Consultar" })
+      // Botón "Consultar"
+      const botonConsultar = page.getByRole("button", { name: /consultar/i })
                                   .or(page.locator("button:has-text('Consultar')"))
                                   .or(page.locator("span.p-button-label:has-text('Consultar')"));
 
       await botonConsultar.first().click({ force: true });
       console.log("✔ Botón 'Consultar' presionado");
 
-      // Esperar actualización de la tabla de resultados
       await page.waitForTimeout(3000);
 
       const rowSelector = "table tbody tr";
@@ -89,16 +115,12 @@ const { execSync } = require('child_process');
       for (const fila of filas) {
         const textoFila = (await fila.innerText()).trim();
 
-        // Filtrar por la fecha de hoy
         if (textoFila.includes(fechaHoy)) {
           const yaEnEnviados = enviados.includes(textoFila);
           const yaEnNuevos = nuevos.some(n => n.texto === textoFila);
 
           if (!yaEnEnviados && !yaEnNuevos) {
-            nuevos.push({
-              palabra,
-              texto: textoFila
-            });
+            nuevos.push({ palabra, texto: textoFila });
             agregadosHoy++;
           }
         }
@@ -120,7 +142,6 @@ const { execSync } = require('child_process');
       });
     }
 
-    // Envío de correos y persistencia si hay novedades
     if (nuevos.length > 0) {
       console.log("\n📧 Enviando correo...");
 
@@ -157,7 +178,6 @@ const { execSync } = require('child_process');
         execSync("git add enviados.json");
         execSync("git commit -m 'Actualizar enviados.json'");
         execSync("git push");
-        execSync("git push");
         console.log("✔ Cambios subidos a Git");
       } catch (gitErr) {
         console.error("⚠️ Error en Git sync:", gitErr.message);
@@ -166,6 +186,9 @@ const { execSync } = require('child_process');
 
   } catch (error) {
     console.error("❌ Error en la ejecución:", error);
+    // Guarda una captura de pantalla en la raíz para diagnosticar bloqueos visuales
+    await page.screenshot({ path: "error.png", fullPage: true }).catch(() => {});
+    console.log("📸 Captura de pantalla 'error.png' guardada.");
   } finally {
     await browser.close();
     console.log("\nScraper finalizado.");
