@@ -16,17 +16,19 @@ const { execSync } = require('child_process');
     // 1. Entrar a SICOP
     console.log("Abriendo SICOP...");
     await page.goto("https://www.sicop.go.cr/app/module/bid/public/tenders", {
-      waitUntil: "domcontentloaded",
+      waitUntil: "networkidle", // Espera a que Angular termine las peticiones iniciales
       timeout: 120000
     });
 
     // 2. Hacer clic en "Búsqueda avanzada"
     console.log("Desplegando sección 'Búsqueda avanzada'...");
-    // Se usa selector por texto para evitar fallos si el ID dinámico pn_id_X cambia entre sesiones
-    const busquedaAvanzadaHeader = page.locator("p-accordion-header").filter({ hasText: "Búsqueda avanzada" })
-                                       .or(page.locator("#pn_id_6_accordionheader_1"));
     
-    await busquedaAvanzadaHeader.first().click({ force: true });
+    // Selector semántico universal para PrimeNG sin IDs dinámicos
+    const busquedaAvanzadaHeader = page.getByText("Búsqueda avanzada", { exact: false });
+
+    // Esperar explícitamente a que Angular renderice el texto en el DOM
+    await busquedaAvanzadaHeader.first().waitFor({ state: "visible", timeout: 30000 });
+    await busquedaAvanzadaHeader.first().click();
 
     // 3. Esperar a que el input #attr_cartelNm sea visible dentro del acordeón
     const inputCartel = page.locator("#attr_cartelNm");
@@ -154,6 +156,7 @@ const { execSync } = require('child_process');
         execSync("git config user.email 'github-actions@github.com'");
         execSync("git add enviados.json");
         execSync("git commit -m 'Actualizar enviados.json'");
+        execSync("git push");
         execSync("git push");
         console.log("✔ Cambios subidos a Git");
       } catch (gitErr) {
