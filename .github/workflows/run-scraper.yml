@@ -2,7 +2,7 @@ name: Run SICOP Scraper
 
 on:
   schedule:
-    - cron: "0 * * * *"   # Corre cada hora
+    - cron: "23 * * * *"   # Corre cada hora
   workflow_dispatch:
 
 permissions:
