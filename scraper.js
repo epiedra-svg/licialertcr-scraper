@@ -39,7 +39,7 @@ const { execSync } = require('child_process');
     const inputCartel = page.locator("#attr_cartelNm");
     await inputCartel.waitFor({ state: "visible", timeout: 30000 });
 
-    const keywords = ["Agua", "Geo", "Geología", "Pozo", "Ambiente", "Ambiental", "Mapa"];
+    const keywords = ["Agua", "Geo", "Pozo", "Ambient", "Mapa"];
 
     let enviados = [];
     if (fs.existsSync("enviados.json")) {
